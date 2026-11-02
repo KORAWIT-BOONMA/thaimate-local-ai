@@ -1,0 +1,38 @@
+```gitignore
+# Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/dist/
+
+# Python
+backend/venv/
+backend/.venv/
+backend/__pycache__/
+**/__pycache__/
+*.py[cod]
+
+# Local database
+backend/thaimate.db
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# AI model files
+*.gguf
+*.safetensors
+*.pt
+*.pth
+*.bin
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+
+# Unnecessary file
+backend/main.pyuvicorn
+```
