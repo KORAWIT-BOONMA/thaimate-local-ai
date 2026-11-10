@@ -1,4 +1,3 @@
-```gitignore
 # Frontend
 frontend/node_modules/
 frontend/.next/
@@ -8,14 +7,15 @@ frontend/dist/
 # Python
 backend/venv/
 backend/.venv/
-backend/__pycache__/
 **/__pycache__/
 *.py[cod]
 
-# Local database
-backend/thaimate.db
+# Local databases
+**/*.db
+**/*.sqlite
+**/*.sqlite3
 
-# Environment variables
+# Environment variables and secrets
 .env
 .env.*
 !.env.example
@@ -33,6 +33,12 @@ backend/thaimate.db
 # IDE
 .vscode/
 
+# Uploaded documents and private data
+/workspace/uploads/
+/workspace/thaiMate_knowledge_test.txt
+
+# Local backup files
+*.bak
+
 # Unnecessary file
 backend/main.pyuvicorn
-```
