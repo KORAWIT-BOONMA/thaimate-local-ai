@@ -1,102 +1,169 @@
 # ThaiMate AI
 
-A local AI chat assistant that runs entirely on your own computer.
-Chat in Thai or English, and let the assistant write, save, and run Python code
-inside a restricted workspace, with your approval at every step.
+**ผู้ช่วย AI ส่วนตัวที่ทำงานบนเครื่องคอมพิวเตอร์ของคุณ รองรับภาษาไทยและภาษาอังกฤษ พร้อมระบบจัดการไฟล์ ค้นหาความรู้ และวิเคราะห์ข้อมูล**
 
-ผู้ช่วย AI ภาษาไทยที่รันบนเครื่องของคุณเอง ไม่ส่งข้อมูลออกอินเทอร์เน็ต
+ThaiMate คือ Local-first AI Personal Assistant ที่พัฒนาขึ้นเพื่อช่วยในการสนทนา ตอบคำถาม อ่านเอกสาร วิเคราะห์ข้อมูล เขียนโค้ด และช่วยจัดการงานต่าง ๆ โดยใช้โมเดล AI ที่สามารถทำงานภายในเครื่องผ่าน Ollama พร้อมเชื่อมต่อบริการออนไลน์เพิ่มเติมได้ตามความต้องการ
 
-## Features
+## ✨ ความสามารถหลัก (Features)
 
-- Streaming chat with a local LLM through Ollama (default: `qwen3.5:4b`)
-- Persistent chat history (SQLite) with a sidebar to switch conversations
-- Attach files from the workspace so the model can read them
-- Save code from the chat into the workspace (asks before overwriting)
-- Run Python files with an explicit approval step, a 10-second timeout,
-  and captured output
-- Send run results back to the model so it can explain and fix errors
+- **AI Chat:** สนทนาภาษาไทยและภาษาอังกฤษผ่านโมเดล Qwen 3.5:4B บน Ollama พร้อมแสดงคำตอบแบบ Streaming
+- **Chat History:** บันทึกประวัติการสนทนาด้วย SQLite และสามารถกลับไปดูบทสนทนาเดิมได้
+- **Document Management:** เพิ่มและจัดการเอกสารความรู้ รองรับ PDF, DOCX, TXT, CSV และ XLSX
+- **Local Knowledge Search:** ใช้ BGE-M3 สร้าง Embeddings และค้นหาข้อมูลจากเอกสารภายในเครื่องด้วย Semantic Search
+- **Document Analysis:** อ่านและสรุปเนื้อหาเอกสาร รวมถึงวิเคราะห์ตารางข้อมูลจากไฟล์ที่รองรับ
+- **Tabular Data Analysis:** วิเคราะห์ข้อมูลจาก CSV และ Excel พร้อมสรุปข้อมูลทางสถิติ
+- **PDF Table Analysis:** วิเคราะห์ตารางผลการเรียนและข้อมูลเกรดจากเอกสาร PDF
+- **Web Search:** เชื่อมต่อ Tavily เพื่อค้นหาข้อมูลจากอินเทอร์เน็ตเมื่อจำเป็น
+- **Cloud AI:** รองรับ Gemini สำหรับการประมวลผลผ่านบริการ Cloud โดยมีขั้นตอนขอความยินยอมก่อนส่งข้อมูล
+- **Workspace:** จัดการไฟล์ อ่านไฟล์ และบันทึกโค้ดภายในพื้นที่ Workspace ที่กำหนด
 
-## Architecture
+## 🏗️ สถาปัตยกรรมระบบ (Architecture)
 
+```text
+Browser (Next.js)
+       |
+       v
+FastAPI Backend (Port 8000)
+       |
+       +---- SQLite
+       |      - Chat History
+       |      - Knowledge Database
+       |
+       +---- Workspace
+       |      - File Management
+       |      - Code Storage
+       |
+       +---- Ollama (Port 11434)
+       |      - Qwen 3.5:4B
+       |      - BGE-M3
+       |
+       +---- Tavily Web Search
+       |
+       +---- Gemini Cloud AI
 ```
-Browser (Next.js, port 3000)
-        |
-        v
-FastAPI backend (port 8000) --- SQLite (thaimate.db)
-        |
-        +--- workspace/ (the only folder the AI can touch)
-        |
-        v
-Ollama (port 11434) --- local model
+
+### เทคโนโลยีที่ใช้ (Tech Stack)
+
+| ส่วนประกอบ | เทคโนโลยี |
+|---|---|
+| Frontend | Next.js, React, TypeScript |
+| Backend | Python, FastAPI |
+| Local LLM | Ollama, Qwen 3.5:4B |
+| Embedding Model | BGE-M3 |
+| Database | SQLite |
+| Web Search | Tavily API |
+| Cloud AI | Google Gemini |
+| Data Analysis | Python, Pandas, OpenPyXL |
+
+## 💻 ความต้องการของระบบ (Requirements)
+
+- Windows 10/11
+- Python และ Node.js เวอร์ชันที่รองรับกับ Dependencies ของโปรเจกต์
+- Ollama
+- RAM แนะนำ 16 GB ขึ้นไป ทั้งนี้ขึ้นอยู่กับโมเดลและขนาดข้อมูลที่ใช้งาน
+- อินเทอร์เน็ตสำหรับติดตั้ง Dependencies และใช้งาน Web Search หรือ Gemini
+
+## ⚙️ การติดตั้ง (Installation)
+
+### 1. ดาวน์โหลดโปรเจกต์
+
+```powershell
+git clone https://github.com/KORAWIT-BOONMA/thaimate-local-ai.git
+cd thaimate-local-ai
 ```
 
-- `backend/main.py` API endpoints (chat, conversations, files, run)
-- `backend/db.py` SQLite storage
-- `backend/workspace.py` safe file access and code execution
-- `frontend/src/app/page.tsx` the chat UI
+### 2. ติดตั้งโมเดลผ่าน Ollama
 
-## Requirements
+ติดตั้ง Ollama จากเว็บไซต์:
 
-- Windows, Python 3.10+, Node.js 18.18+
-- [Ollama](https://ollama.com) with a model pulled, e.g. `ollama pull qwen3.5:4b`
-- Tested on a laptop with 16 GB RAM and an RTX 3050 (4 GB VRAM)
+https://ollama.com/
 
-## Setup
+จากนั้นดาวน์โหลดโมเดลที่ ThaiMate ใช้งาน
 
-Backend:
+```powershell
+ollama pull qwen3.5:4b
+ollama pull bge-m3
+```
+
+### 3. ติดตั้ง Backend
 
 ```powershell
 cd backend
+
 python -m venv venv
+
 .\venv\Scripts\Activate.ps1
-pip install fastapi uvicorn httpx
-uvicorn main:app --reload
+
+pip install -r requirements.txt
 ```
 
-Frontend (new terminal):
+### 4. ติดตั้ง Frontend
+
+เปิด Terminal อีกหน้าต่างหนึ่ง แล้วเข้าโฟลเดอร์โปรเจกต์
 
 ```powershell
 cd frontend
+
 npm install
-npm run dev
 ```
 
-Open http://localhost:3000. Make sure Ollama is running.
+### 5. ตั้งค่า API Keys (ไม่บังคับ)
 
-To change the model, edit `MODEL_NAME` in `backend/main.py`.
+หากต้องการใช้งาน Web Search และ Gemini ให้ตั้งค่า API Keys ในไฟล์ `backend/.env`
 
-## Safety design
+- `TAVILY_API_KEY` สำหรับ Tavily Web Search
+- `GEMINI_API_KEY` สำหรับ Google Gemini
 
-- File access is limited to the `workspace/` folder. Paths are resolved and
-  checked, so `../` tricks are rejected.
-- Writing never overwrites silently; the UI asks first.
-- Only a small set of text/code extensions can be written
-  (no `.bat`, `.ps1`, `.exe`).
-- Code is never run automatically. The UI shows the exact command, the working
-  folder, and the timeout, and waits for approval.
-- Execution uses a fixed command (no shell), no stdin, a 10 s timeout, and
-  truncated output.
+ไม่จำเป็นต้องตั้งค่า API Keys หากต้องการใช้เฉพาะโมเดล Local
 
-## Limitations
+**ข้อควรระวัง:** ห้ามนำไฟล์ `.env` ที่มี API Keys จริงขึ้น GitHub
 
-- **Running code is not sandboxed.** A Python script runs with the same
-  permissions as your user account and can access files outside `workspace/`.
-  Read the code before approving. For stronger isolation, run it in Docker or
-  Windows Sandbox.
-- Small local models (4B) make mistakes and may occasionally mix in Chinese
-  characters. The system prompt reduces but does not eliminate this.
-- Thinking mode is disabled for speed; enabling it improves reasoning but is
-  much slower on 4 GB VRAM.
-- No internet access, no document (PDF/Word) reading yet.
+### 6. เริ่มต้นใช้งาน
 
-## Roadmap
+กลับไปยังโฟลเดอร์หลักของโปรเจกต์ และเรียกใช้ไฟล์
 
-- One-click launcher script
-- PDF/Word reading
-- Model comparison (Pathumma, Qwen3.5, Typhoon)
-- Voice input (Faster-Whisper)
-- Selectable working folder with stricter safety checks
+```powershell
+.\start-thaimate.bat
+```
 
-## Author
+ระบบจะเริ่มบริการที่จำเป็นสำหรับ ThaiMate
 
-Your name / GitHub link here
+เปิดเว็บเบราว์เซอร์ที่:
+
+http://127.0.0.1:3000
+
+## 🔐 ความปลอดภัยและความเป็นส่วนตัว (Security & Privacy)
+
+ThaiMate ถูกออกแบบให้เน้นการประมวลผลภายในเครื่อง (Local-first) โดยมีแนวทางดังนี้
+
+- การสนทนาผ่าน Qwen Local ประมวลผลผ่าน Ollama บนเครื่องของผู้ใช้
+- ระบบ Workspace ตรวจสอบและจำกัดเส้นทางไฟล์ไม่ให้ออกจากพื้นที่ที่กำหนด
+- ป้องกันการเข้าถึงไฟล์และโฟลเดอร์ที่มีความอ่อนไหว
+- การเขียนไฟล์มีการตรวจสอบและป้องกันการเขียนทับโดยไม่ตั้งใจ
+- การส่งข้อมูลไปยัง Gemini Cloud ต้องผ่านขั้นตอนขอความยินยอมจากผู้ใช้
+- API Keys เก็บไว้ในไฟล์ `.env` ซึ่งไม่ควรถูกนำขึ้น GitHub
+
+**หมายเหตุเกี่ยวกับการส่งข้อมูล:** การใช้ Tavily จะส่งคำค้นหาไปยังบริการภายนอก ส่วนการใช้ Gemini อาจส่งข้อความสนทนา ประวัติ และบริบทจากเอกสารที่เกี่ยวข้องไปประมวลผลบน Cloud ผู้ใช้ควรตรวจสอบข้อมูลก่อนให้ความยินยอม
+
+## ⚠️ ข้อจำกัดของระบบ (Limitations)
+
+- โมเดลขนาดเล็กอาจตอบผิด วิเคราะห์คลาดเคลื่อน หรือสร้างข้อมูลที่ไม่มีอยู่จริงได้ ควรตรวจสอบคำตอบที่สำคัญ
+- คุณภาพและความเร็วในการตอบขึ้นอยู่กับทรัพยากรของเครื่อง โดยเฉพาะ RAM และ VRAM
+- ระบบ Python Code Execution ถูกปิดใช้งานในเวอร์ชันปัจจุบัน เพื่อป้องกันความเสี่ยงจากการรันโค้ดบนเครื่องของผู้ใช้
+- การใช้งาน Web Search และ Gemini ต้องมี API Key และเชื่อมต่ออินเทอร์เน็ต
+- ระบบ Local API ยังไม่ได้ออกแบบสำหรับเปิดให้เข้าถึงจากอินเทอร์เน็ตสาธารณะ ไม่ควรเปิด Backend ออกสู่เครือข่ายภายนอกโดยไม่มีระบบยืนยันตัวตนและมาตรการรักษาความปลอดภัยเพิ่มเติม
+
+## 🚀 แนวทางพัฒนาในอนาคต (Roadmap)
+
+- เพิ่มประสิทธิภาพการค้นหาความรู้จากเอกสาร
+- พัฒนาความสามารถในการวิเคราะห์เอกสารและตารางข้อมูล
+- เพิ่มประสิทธิภาพการจัดการ Context และ Memory
+- พัฒนาระบบประเมินคุณภาพคำตอบของโมเดล
+- เพิ่มระบบ Sandbox ที่ปลอดภัยสำหรับการ Execute Code
+- พัฒนาระบบ Voice Input และ Voice Assistant
+
+## 👨‍💻 ผู้พัฒนา
+
+ThaiMate AI — Local AI Personal Assistant
+
+GitHub: https://github.com/KORAWIT-BOONMA
