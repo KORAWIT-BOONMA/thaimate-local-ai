@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from pathlib import Path
 
@@ -28,6 +29,7 @@ def init_db():
                     REFERENCES conversations(id) ON DELETE CASCADE,
                 role TEXT NOT NULL,
                 content TEXT NOT NULL,
+                images_json TEXT NOT NULL DEFAULT '[]',
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
             """
@@ -43,6 +45,15 @@ def init_db():
                 "ALTER TABLE conversations ADD COLUMN model_provider TEXT NOT NULL DEFAULT 'ollama'"
             )
 
+        message_columns = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(messages)").fetchall()
+        }
+        if "images_json" not in message_columns:
+            conn.execute(
+                "ALTER TABLE messages ADD COLUMN images_json TEXT NOT NULL DEFAULT '[]'"
+            )
+
 
 def create_conversation(title="บทสนทนาใหม่", model_provider="ollama"):
     with get_conn() as conn:
@@ -53,21 +64,35 @@ def create_conversation(title="บทสนทนาใหม่", model_provide
         return cur.lastrowid
 
 
-def add_message(conversation_id, role, content):
+def add_message(conversation_id, role, content, images=None):
+    """Persist a chat message and its optional image attachments."""
+    images_json = json.dumps(images or [], ensure_ascii=False)
     with get_conn() as conn:
         conn.execute(
-            "INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)",
-            (conversation_id, role, content),
+            "INSERT INTO messages (conversation_id, role, content, images_json) VALUES (?, ?, ?, ?)",
+            (conversation_id, role, content, images_json),
         )
 
 
 def get_messages(conversation_id):
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT role, content FROM messages WHERE conversation_id = ? ORDER BY id",
+            "SELECT role, content, images_json FROM messages WHERE conversation_id = ? ORDER BY id",
             (conversation_id,),
         ).fetchall()
-        return [dict(r) for r in rows]
+
+    messages = []
+    for row in rows:
+        item = dict(row)
+        raw_images = item.pop("images_json", "[]")
+        try:
+            images = json.loads(raw_images or "[]")
+        except (TypeError, json.JSONDecodeError):
+            images = []
+        item["images"] = images if isinstance(images, list) else []
+        messages.append(item)
+
+    return messages
 
 
 def list_conversations():
