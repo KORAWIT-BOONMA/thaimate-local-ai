@@ -423,10 +423,10 @@ function buildResultMessage(path: string, r: RunResult) {
 
   let msg = `ผลการรันไฟล์ ${path}: ${status}\n`;
 
-  msg += `\nstdout:\n\`\`\`\n${clip(r.stdout) || "(ว่าง)"}\n\`\`\`\n`;
+  msg += `\nstdout:\n```\n${clip(r.stdout) || "(ว่าง)"}\n```\n`;
 
   if (r.stderr) {
-    msg += `\nstderr:\n\`\`\`\n${clip(r.stderr)}\n\`\`\`\n`;
+    msg += `\nstderr:\n```\n${clip(r.stderr)}\n```\n`;
   }
 
   msg +=
@@ -866,7 +866,7 @@ export default function Home() {
         continue;
       }
       if (file.size > 10 * 1024 * 1024) {
-        setImageStatus(\`\${file.name}: ไฟล์ต้นฉบับใหญ่เกิน 10 MB\`);
+        setImageStatus(`${file.name}: ไฟล์ต้นฉบับใหญ่เกิน 10 MB`);
         continue;
       }
 
@@ -922,7 +922,7 @@ export default function Home() {
 
     if (additions.length) {
       setSelectedImages((current) => [...current, ...additions].slice(0, 3));
-      setImageStatus(\`แนบรูปภาพแล้ว \${Math.min(3, selectedImages.length + additions.length)} / 3 ภาพ\`);
+      setImageStatus(`แนบรูปภาพแล้ว ${Math.min(3, selectedImages.length + additions.length)} / 3 ภาพ`);
     }
   }
 
