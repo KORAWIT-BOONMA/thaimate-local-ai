@@ -1442,6 +1442,26 @@ export default function Home() {
       },
     ];
 
+    // Only send the three newest images to keep conversation requests bounded.
+    let imageBudget = 3;
+    for (let index = history.length - 1; index >= 0; index -= 1) {
+      const images = history[index].images;
+      if (!images?.length) continue;
+      const kept = images.slice(0, imageBudget);
+      imageBudget -= kept.length;
+      if (kept.length) {
+        history[index] = { ...history[index], images: kept };
+      } else {
+        const { images: _discarded, ...withoutImages } = history[index];
+        history[index] = withoutImages;
+      }
+    }
+
+    // Gemini text mode does not receive historical local image data.
+    const requestHistory: Message[] = modelProvider === "gemini"
+      ? history.map(({ images: _images, ...message }) => message)
+      : history;
+
     if (!fromButton) {
       setInput("");
       setSelectedImages([]);
@@ -1498,7 +1518,7 @@ export default function Home() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          messages: history,
+          messages: requestHistory,
           conversation_id: convId,
           knowledge_source: knowledgeSource,
           model_provider: modelProvider,
@@ -1850,12 +1870,30 @@ export default function Home() {
 
                   <div className="assistant-message min-w-0 flex-1 pt-0.5 text-[14px] leading-7">
                     {m.content ? (
-                      <AssistantContent
-                        content={m.content}
-                        canAct={!loading}
-                        onSaved={refreshFiles}
-                        onSendResult={(t) => handleSend(t)}
-                      />
+                      <>
+                        <AssistantContent
+                          content={m.content}
+                          canAct={!loading}
+                          onSaved={refreshFiles}
+                          onSendResult={(t) => handleSend(t)}
+                        />
+                        {!loading && (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                await navigator.clipboard.writeText(m.content);
+                                setImageStatus("คัดลอกข้อความแล้ว");
+                              } catch {
+                                window.alert("คัดลอกไม่ได้ กรุณาเลือกข้อความแล้วกด Ctrl+C");
+                              }
+                            }}
+                            className="mt-2 rounded-md px-2 py-1 text-[10px] text-slate-500 hover:bg-white/[0.05] hover:text-slate-300"
+                          >
+                            คัดลอกคำตอบ
+                          </button>
+                        )}
+                      </>
                     ) : streaming ? (
                       <div className="typing-state flex items-center gap-2.5 py-1.5">
                         <span className="text-xs text-slate-500">
