@@ -135,6 +135,17 @@ class ChatRequest(BaseModel):
     model_provider: Literal["ollama", "gemini"] = "ollama"
     cloud_consent: bool = False
 
+    @model_validator(mode="after")
+    def validate_total_image_payload(self):
+        total_encoded_size = sum(
+            len(image.data)
+            for message in self.messages
+            for image in message.images
+        )
+        if total_encoded_size > 14_000_000:
+            raise ValueError("รูปภาพทั้งหมดในคำขอมีขนาดใหญ่เกินไป")
+        return self
+
 
 class WriteRequest(BaseModel):
     path: str
