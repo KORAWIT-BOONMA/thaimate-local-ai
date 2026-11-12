@@ -197,7 +197,7 @@ export default function AssistantTools({
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
-          onClick={() => { setTab("email"); setOpen((value) => !value); }}
+          onClick={() => { setTab("email"); setOpen(true); }}
           disabled={disabled}
           className="rounded-lg border border-sky-400/20 bg-sky-400/[0.07] px-3 py-2 text-xs font-medium text-sky-200 hover:bg-sky-400/[0.13] disabled:opacity-50"
         >
@@ -205,7 +205,7 @@ export default function AssistantTools({
         </button>
         <button
           type="button"
-          onClick={() => { setTab("profile"); setOpen((value) => !value); }}
+          onClick={() => { setTab("profile"); setOpen(true); }}
           disabled={disabled}
           className="rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-xs text-slate-300 hover:bg-white/[0.07] disabled:opacity-50"
         >
@@ -213,7 +213,7 @@ export default function AssistantTools({
         </button>
         <button
           type="button"
-          onClick={() => { setTab("tasks"); setOpen((value) => !value); }}
+          onClick={() => { setTab("tasks"); setOpen(true); }}
           disabled={disabled}
           className="rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-xs text-slate-300 hover:bg-white/[0.07] disabled:opacity-50"
         >
