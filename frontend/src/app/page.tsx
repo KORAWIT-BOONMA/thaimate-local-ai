@@ -423,10 +423,10 @@ function buildResultMessage(path: string, r: RunResult) {
 
   let msg = `ผลการรันไฟล์ ${path}: ${status}\n`;
 
-  msg += `\nstdout:\n```\n${clip(r.stdout) || "(ว่าง)"}\n```\n`;
+  msg += `\nstdout:\n\`\`\`\n${clip(r.stdout) || "(ว่าง)"}\n\`\`\`\n`;
 
   if (r.stderr) {
-    msg += `\nstderr:\n```\n${clip(r.stderr)}\n```\n`;
+    msg += `\nstderr:\n\`\`\`\n${clip(r.stderr)}\n\`\`\`\n`;
   }
 
   msg +=
