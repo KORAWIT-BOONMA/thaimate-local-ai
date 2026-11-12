@@ -1,10 +1,11 @@
+import base64
 import logging
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Literal
 
 import db
@@ -78,9 +79,53 @@ def startup():
 # Request Models
 # ==========================================
 
+class ImageAttachment(BaseModel):
+    mime_type: Literal["image/png", "image/jpeg", "image/webp"]
+    data: str = Field(min_length=32, max_length=5_600_000)
+    name: str = Field(default="image", max_length=160)
+
+    @field_validator("data")
+    @classmethod
+    def validate_image_data(cls, value: str) -> str:
+        try:
+            decoded = base64.b64decode(value, validate=True)
+        except Exception as exc:
+            raise ValueError("ข้อมูลรูปภาพ Base64 ไม่ถูกต้อง") from exc
+
+        if len(decoded) > 4 * 1024 * 1024:
+            raise ValueError("รูปภาพแต่ละไฟล์ต้องมีขนาดไม่เกิน 4 MB")
+
+        return value
+
+    @model_validator(mode="after")
+    def validate_image_signature(self):
+        raw = base64.b64decode(self.data, validate=True)
+        signatures = {
+            "image/png": raw.startswith(b"\x89PNG\r\n\x1a\n"),
+            "image/jpeg": raw.startswith(b"\xff\xd8\xff"),
+            "image/webp": (
+                len(raw) >= 12
+                and raw.startswith(b"RIFF")
+                and raw[8:12] == b"WEBP"
+            ),
+        }
+        if not signatures.get(self.mime_type, False):
+            raise ValueError("ชนิดไฟล์รูปภาพไม่ตรงกับข้อมูลจริง")
+        return self
+
+
 class Message(BaseModel):
     role: str
     content: str
+    images: list[ImageAttachment] = Field(default_factory=list, max_length=3)
+
+    @model_validator(mode="after")
+    def validate_message_images(self):
+        if self.images and self.role != "user":
+            raise ValueError("แนบภาพได้เฉพาะข้อความจากผู้ใช้")
+        if sum(len(image.data) for image in self.images) > 14_000_000:
+            raise ValueError("รูปภาพรวมกันมีขนาดใหญ่เกินไป")
+        return self
 
 
 class ChatRequest(BaseModel):
@@ -128,6 +173,16 @@ def require_cloud_consent(req: ChatRequest):
                 "ต้องได้รับความยินยอมก่อนส่งข้อมูลไปยัง Gemini Cloud "
                 "ข้อมูลสนทนาและบริบทจากไฟล์ที่เกี่ยวข้องอาจถูกส่งออกไปประมวลผล"
             ),
+        )
+
+
+def reject_gemini_images(req: ChatRequest):
+    """Keep image understanding local until a cloud vision adapter is added."""
+
+    if req.model_provider == "gemini" and any(message.images for message in req.messages):
+        raise HTTPException(
+            status_code=400,
+            detail="การวิเคราะห์ภาพในเวอร์ชันนี้รองรับ Qwen Local ผ่าน Ollama เท่านั้น กรุณาเลือก Qwen Local",
         )
 
 # ==========================================
@@ -441,6 +496,7 @@ def knowledge_delete(req: KnowledgeDeleteRequest):
 @app.post("/chat")
 async def chat(req: ChatRequest):
     require_cloud_consent(req)
+    reject_gemini_images(req)
 
     messages = [
         message.model_dump()
@@ -486,6 +542,7 @@ async def chat_stream(req: ChatRequest):
 
     # Require consent before starting the streaming response.
     require_cloud_consent(req)
+    reject_gemini_images(req)
 
     if not req.messages:
         raise HTTPException(
@@ -524,6 +581,7 @@ async def chat_stream(req: ChatRequest):
         conv_id,
         "user",
         req.messages[-1].content,
+        images=[image.model_dump() for image in req.messages[-1].images],
     )
 
     async def generate():
