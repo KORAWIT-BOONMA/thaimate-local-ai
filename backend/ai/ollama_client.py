@@ -132,9 +132,25 @@ def build_payload(
         NUM_PREDICT if num_predict is None else max(1, int(num_predict))
     )
 
+    ollama_messages = []
+    for message in messages:
+        normalized = dict(message)
+        attachments = normalized.get("images")
+        if isinstance(attachments, list):
+            image_data = [
+                item.get("data")
+                for item in attachments
+                if isinstance(item, dict) and isinstance(item.get("data"), str)
+            ]
+            if image_data:
+                normalized["images"] = image_data
+            else:
+                normalized.pop("images", None)
+        ollama_messages.append(normalized)
+
     return {
         "model": MODEL_NAME,
-        "messages": messages,
+        "messages": ollama_messages,
         "stream": stream,
         "think": False,
         "keep_alive": KEEP_ALIVE,
