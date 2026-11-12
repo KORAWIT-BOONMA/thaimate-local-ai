@@ -502,10 +502,16 @@ def limit_conversation_history(
         if not isinstance(content, str):
             content = str(content)
 
-        valid_messages.append({
+        normalized_message = {
             "role": role,
             "content": content,
-        })
+        }
+
+        images = message.get("images", [])
+        if role == "user" and isinstance(images, list) and images:
+            normalized_message["images"] = images[:3]
+
+        valid_messages.append(normalized_message)
 
     if not valid_messages:
         return []
@@ -537,6 +543,19 @@ def limit_conversation_history(
 
         selected_reversed.append(message)
         used_chars += content_length
+
+    # Keep image context bounded while preserving the newest attachments first.
+    remaining_images = 3
+    for message in selected_reversed:
+        images = message.get("images", [])
+        if not isinstance(images, list) or not images:
+            continue
+        kept_images = images[:remaining_images]
+        remaining_images -= len(kept_images)
+        if kept_images:
+            message["images"] = kept_images
+        else:
+            message.pop("images", None)
 
     selected_messages = list(
         reversed(selected_reversed)
