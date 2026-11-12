@@ -1,15 +1,27 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import AssistantTools from "./assistant-tools";
 
 const API = "http://127.0.0.1:8000";
 const GREETING = "สวัสดีครับ ผมคือ ThaiMate มีอะไรให้ช่วยไหม";
 const MAX_RESULT_CHARS = 3000;
 
+type ChatImage = {
+  mime_type: "image/png" | "image/jpeg" | "image/webp";
+  data: string;
+  name: string;
+};
+
 type Message = {
   role: "user" | "assistant";
   content: string;
+  images?: ChatImage[];
 };
+
+function imageSource(image: ChatImage): string {
+  return `data:${image.mime_type};base64,${image.data}`;
+}
 
 type ModelProvider = "ollama" | "gemini";
 
@@ -819,6 +831,8 @@ export default function Home() {
   const [files, setFiles] = useState<string[]>([]);
   const [knowledgeSources, setKnowledgeSources] = useState<KnowledgeSource[]>([]);
   const [attached, setAttached] = useState<string | null>(null);
+  const [selectedImages, setSelectedImages] = useState<ChatImage[]>([]);
+  const [imageStatus, setImageStatus] = useState("");
   const [uploading, setUploading] = useState(false);
   const [fileStatus, setFileStatus] = useState("");
   const [attachmentExpanded, setAttachmentExpanded] = useState(false);
@@ -828,11 +842,89 @@ export default function Home() {
   const [deletingAll, setDeletingAll] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const sendingRef = useRef(false);
 
   // ป้องกันคำขอโหลดประวัติแชตเก่าเขียนทับข้อความใหม่
   const conversationLoadTokenRef = useRef(0);
+
+  async function addImageFiles(fileList: FileList | null) {
+    if (!fileList?.length) return;
+
+    const availableSlots = Math.max(0, 3 - selectedImages.length);
+    if (availableSlots === 0) {
+      setImageStatus("แนบภาพได้สูงสุด 3 ภาพต่อข้อความ");
+      return;
+    }
+
+    const additions: ChatImage[] = [];
+
+    for (const file of Array.from(fileList).slice(0, availableSlots)) {
+      if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+        setImageStatus("รองรับเฉพาะภาพ PNG, JPG และ WEBP");
+        continue;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        setImageStatus(\`\${file.name}: ไฟล์ต้นฉบับใหญ่เกิน 10 MB\`);
+        continue;
+      }
+
+      try {
+        const bitmap = await createImageBitmap(file);
+        const longestSide = Math.max(bitmap.width, bitmap.height);
+        let blob: Blob = file;
+
+        if (file.size > 4 * 1024 * 1024 || longestSide > 2200) {
+          const scale = Math.min(1, 2000 / longestSide);
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+          canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+          const context = canvas.getContext("2d");
+          if (!context) throw new Error("ไม่สามารถประมวลผลรูปภาพได้");
+          context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+          blob = await new Promise<Blob>((resolve, reject) => {
+            canvas.toBlob(
+              (value) => value ? resolve(value) : reject(new Error("แปลงรูปภาพไม่สำเร็จ")),
+              "image/jpeg",
+              0.9
+            );
+          });
+        }
+        bitmap.close();
+
+        if (blob.size > 4 * 1024 * 1024) {
+          throw new Error("รูปหลังปรับขนาดยังใหญ่เกิน 4 MB");
+        }
+
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => typeof reader.result === "string"
+            ? resolve(reader.result)
+            : reject(new Error("อ่านรูปภาพไม่สำเร็จ"));
+          reader.onerror = () => reject(new Error("อ่านรูปภาพไม่สำเร็จ"));
+          reader.readAsDataURL(blob);
+        });
+
+        const encoded = dataUrl.split(",")[1];
+        if (!encoded) throw new Error("ข้อมูลรูปภาพไม่ถูกต้อง");
+
+        const mime = blob.type as ChatImage["mime_type"];
+        additions.push({
+          mime_type: mime,
+          data: encoded,
+          name: file.name.slice(0, 160),
+        });
+      } catch (error) {
+        setImageStatus(error instanceof Error ? error.message : "เตรียมรูปภาพไม่สำเร็จ");
+      }
+    }
+
+    if (additions.length) {
+      setSelectedImages((current) => [...current, ...additions].slice(0, 3));
+      setImageStatus(\`แนบรูปภาพแล้ว \${Math.min(3, selectedImages.length + additions.length)} / 3 ภาพ\`);
+    }
+  }
 
   // ========================================
   // Refresh Conversations
@@ -1240,9 +1332,20 @@ export default function Home() {
 
   async function handleSend(override?: string) {
   const fromButton = override !== undefined;
-  const text = (fromButton ? override : input).trim();
+  const typedText = (fromButton ? override : input).trim();
+  const messageImages = fromButton ? [] : selectedImages;
+  const text = typedText || (
+    messageImages.length
+      ? "ช่วยวิเคราะห์รูปภาพที่แนบมา อธิบายสิ่งที่เห็นและประเด็นสำคัญ"
+      : ""
+  );
 
-  if (!text || loading || sendingRef.current) return;
+  if ((!text && !messageImages.length) || loading || sendingRef.current) return;
+
+  if (modelProvider === "gemini" && messageImages.length) {
+    window.alert("การวิเคราะห์รูปภาพขณะนี้รองรับ Qwen Local ผ่าน Ollama เท่านั้น กรุณาเลือก Qwen Local");
+    return;
+  }
 
   // Require explicit consent before sending data to Gemini Cloud.
   const cloudConsent =
@@ -1332,11 +1435,17 @@ export default function Home() {
 
     const history: Message[] = [
       ...messages.slice(1),
-      { role: "user", content },
+      {
+        role: "user",
+        content,
+        ...(messageImages.length ? { images: messageImages } : {}),
+      },
     ];
 
     if (!fromButton) {
       setInput("");
+      setSelectedImages([]);
+      setImageStatus("");
     }
 
     setLoading(true);
@@ -1708,8 +1817,20 @@ export default function Home() {
                     key={i}
                     className="flex justify-end"
                   >
-                    <div className="user-message max-h-96 max-w-[88%] overflow-auto whitespace-pre-wrap break-words rounded-2xl px-4 py-3 text-[14px] leading-7 sm:max-w-[80%]">
-                      {m.content}
+                    <div className="user-message max-h-[32rem] max-w-[88%] overflow-auto rounded-2xl px-4 py-3 text-[14px] leading-7 sm:max-w-[80%]">
+                      {m.images?.length ? (
+                        <div className="mb-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                          {m.images.map((image, imageIndex) => (
+                            <img
+                              key={`${i}-${imageIndex}`}
+                              src={imageSource(image)}
+                              alt={image.name || "ภาพแนบ"}
+                              className="max-h-64 max-w-full rounded-lg object-contain"
+                            />
+                          ))}
+                        </div>
+                      ) : null}
+                      <p className="whitespace-pre-wrap break-words">{m.content}</p>
                     </div>
                   </div>
                 );
@@ -1764,7 +1885,15 @@ export default function Home() {
 
         <div className="composer-area px-4 pb-5 pt-3 sm:px-7 sm:pb-7">
           <div className="mx-auto w-full max-w-3xl">
-            {/* Compact File Upload and RAG Attachment */}
+            <AssistantTools
+              disabled={loading || uploading}
+              onUsePrompt={(prompt) => {
+                setInput(prompt);
+                void handleSend(prompt);
+              }}
+            />
+
+            {/* Compact File Upload and Image Attachments */}
 
             <section className="attachment-panel mb-2 rounded-xl p-2.5">
               <input
@@ -1779,6 +1908,18 @@ export default function Home() {
                     setAttachmentExpanded(true);
                     uploadFile(file);
                   }
+                }}
+              />
+
+              <input
+                ref={imageInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                multiple
+                className="hidden"
+                onChange={(event) => {
+                  void addImageFiles(event.target.files);
+                  event.target.value = "";
                 }}
               />
 
@@ -1825,7 +1966,7 @@ export default function Home() {
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={loading || uploading}
-                  title="อัปโหลดไฟล์"
+                  title="อัปโหลดเอกสาร"
                   className="upload-button inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <span className="text-base leading-none">
@@ -1837,6 +1978,16 @@ export default function Home() {
                   </span>
 
                   <span className="sm:hidden">เพิ่ม</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => imageInputRef.current?.click()}
+                  disabled={loading || uploading || selectedImages.length >= 3}
+                  title="แนบรูปภาพเพื่อให้ Qwen วิเคราะห์"
+                  className="quiet-button inline-flex h-10 shrink-0 items-center justify-center rounded-lg px-3 text-xs disabled:opacity-50"
+                >
+                  ＋ รูปภาพ
                 </button>
 
                 <button
@@ -1860,6 +2011,29 @@ export default function Home() {
                   {attachmentExpanded ? "⌃" : "⌄"}
                 </button>
               </div>
+
+              {selectedImages.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {selectedImages.map((image, index) => (
+                    <div key={`${image.name}-${index}`} className="relative h-20 w-20 overflow-hidden rounded-lg border border-white/10 bg-slate-900">
+                      <img src={imageSource(image)} alt={image.name} className="h-full w-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => setSelectedImages((current) => current.filter((_, i) => i !== index))}
+                        disabled={loading}
+                        className="absolute right-1 top-1 rounded-full bg-black/75 px-1.5 text-xs text-white"
+                        aria-label={`ลบภาพ ${image.name}`}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {imageStatus && (
+                <p className="mt-1 text-[10px] text-slate-400">{imageStatus}</p>
+              )}
 
               {/* Selected File Status */}
 
@@ -1935,7 +2109,7 @@ export default function Home() {
                 onKeyDown={(e) =>
                   e.key === "Enter" && handleSend()
                 }
-                placeholder="ส่งข้อความถึง ThaiMate..."
+                placeholder={selectedImages.length ? "ถามเกี่ยวกับรูปภาพที่แนบ..." : "ส่งข้อความถึง ThaiMate..."}
                 disabled={loading}
                 aria-label="พิมพ์ข้อความ"
                 className="message-input min-w-0 flex-1 bg-transparent px-3 py-2.5 text-sm outline-none disabled:opacity-50"
@@ -1943,7 +2117,7 @@ export default function Home() {
 
               <button
                 onClick={() => handleSend()}
-                disabled={loading || !input.trim()}
+                disabled={loading || (!input.trim() && selectedImages.length === 0)}
                 aria-label="ส่งข้อความ"
                 className="send-button inline-flex shrink-0 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-35"
               >
