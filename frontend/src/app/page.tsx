@@ -1206,6 +1206,8 @@ export default function Home() {
 
     setConvId(null);
     setAttached(null);
+    setSelectedImages([]);
+    setImageStatus("");
     setAttachmentExpanded(false);
     setFileStatus("");
 
@@ -1231,6 +1233,8 @@ export default function Home() {
     setMessages([{ role: "assistant", content: GREETING }]);
     setConvId(null);
     setAttached(null);
+    setSelectedImages([]);
+    setImageStatus("");
     setAttachmentExpanded(false);
     setFileStatus("");
     try {
@@ -1926,7 +1930,6 @@ export default function Home() {
             <AssistantTools
               disabled={loading || uploading}
               onUsePrompt={(prompt) => {
-                setInput(prompt);
                 void handleSend(prompt);
               }}
             />
