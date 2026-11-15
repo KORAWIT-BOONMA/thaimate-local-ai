@@ -10,11 +10,12 @@ SUMMARY_TRIGGER_MESSAGES = 14
 SUMMARY_RECENT_MESSAGES = 8
 SUMMARY_INPUT_CHARS = 5200
 SUMMARY_MESSAGE_CHARS = 2200
-SUMMARY_MAX_OUTPUT_TOKENS = 450
-SUMMARY_MAX_CHARS = 2200
+SUMMARY_MAX_OUTPUT_TOKENS = 300
+SUMMARY_MAX_CHARS = 1600
 
 _CONVERSATION_LOCKS = {}
 _BACKGROUND_TASKS = set()
+_SUMMARY_TASKS = {}
 
 _IMAGE_FOLLOWUP_TERMS = (
     "ภาพ", "รูป", "ในภาพ", "ในรูป", "ภาพก่อน", "รูปก่อน",
@@ -210,6 +211,7 @@ async def update_conversation_summary(conversation_id: int) -> bool:
                 ],
                 timeout=DOCUMENT_SUMMARY_TIMEOUT,
                 num_predict=SUMMARY_MAX_OUTPUT_TOKENS,
+                resource_task_name="conversation_summary",
             )
 
             updated_summary = str(updated_summary or "").strip()
@@ -253,11 +255,46 @@ async def update_conversation_summary(conversation_id: int) -> bool:
             return False
 
 
+def cancel_conversation_summary(conversation_id: int) -> None:
+    """Cancel background summary work when the user resumes this conversation."""
+    task = _SUMMARY_TASKS.get(conversation_id)
+    if task is not None and not task.done():
+        task.cancel()
+        logger.info(
+            "Conversation Summary paused for interactive chat: conversation_id=%s",
+            conversation_id,
+        )
+
+
 async def schedule_conversation_summary(conversation_id: int) -> None:
-    """Start summary work after the streaming response has completed."""
+    """Start summary work after a response; interactive chat can preempt it."""
+    existing = _SUMMARY_TASKS.get(conversation_id)
+    if existing is not None and not existing.done():
+        return
+
     task = asyncio.create_task(
         update_conversation_summary(conversation_id),
         name=f"thaimate-summary-{conversation_id}",
     )
+    _SUMMARY_TASKS[conversation_id] = task
     _BACKGROUND_TASKS.add(task)
-    task.add_done_callback(_BACKGROUND_TASKS.discard)
+
+    def cleanup(completed_task):
+        _BACKGROUND_TASKS.discard(completed_task)
+        if _SUMMARY_TASKS.get(conversation_id) is completed_task:
+            _SUMMARY_TASKS.pop(conversation_id, None)
+        if completed_task.cancelled():
+            logger.info(
+                "Conversation Summary paused: conversation_id=%s",
+                conversation_id,
+            )
+        else:
+            error = completed_task.exception()
+            if error is not None:
+                logger.error(
+                    "Conversation Summary task ended unexpectedly: id=%s | error=%s",
+                    conversation_id,
+                    error,
+                )
+
+    task.add_done_callback(cleanup)
