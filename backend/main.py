@@ -29,6 +29,10 @@ from ai.gemini_client import (
 
 from ai.embeddings import EmbeddingError
 from ai.conversation_memory import (
+    SUMMARY_MAX_CHARS,
+    SUMMARY_RECENT_MESSAGES,
+    SUMMARY_TRIGGER_MESSAGES,
+    cancel_conversation_summary,
     load_conversation_context,
     schedule_conversation_summary,
 )
@@ -222,9 +226,9 @@ def resources():
         "ollama": get_resource_snapshot(),
         "conversation_summary": {
             "enabled": True,
-            "trigger_messages": 14,
-            "recent_raw_messages": 8,
-            "maximum_summary_characters": 2200,
+            "trigger_messages": SUMMARY_TRIGGER_MESSAGES,
+            "recent_raw_messages": SUMMARY_RECENT_MESSAGES,
+            "maximum_summary_characters": SUMMARY_MAX_CHARS,
             "storage": "SQLite per conversation",
             "generation": "background after a completed response",
         },
@@ -656,6 +660,9 @@ async def chat_stream(req: ChatRequest):
         completed = False
 
         try:
+            # Interactive requests take priority over optional background summarization.
+            cancel_conversation_summary(conv_id)
+
             context_messages, conversation_summary = load_conversation_context(
                 conv_id,
                 latest_query=req.messages[-1].content,
