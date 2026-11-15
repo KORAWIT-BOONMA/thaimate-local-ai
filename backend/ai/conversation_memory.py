@@ -212,7 +212,7 @@ async def update_conversation_summary(conversation_id: int) -> bool:
                 ],
                 timeout=DOCUMENT_SUMMARY_TIMEOUT,
                 num_predict=SUMMARY_MAX_OUTPUT_TOKENS,
-                resource_task_name="conversation_summary",
+                resource_task_name=f"conversation_summary:{conversation_id}",
             )
 
             updated_summary = str(updated_summary or "").strip()
@@ -269,7 +269,7 @@ async def cancel_conversation_summary(conversation_id: int) -> None:
         return
 
     snapshot = get_resource_snapshot()
-    if snapshot.get("active_task") == "conversation_summary":
+    if snapshot.get("active_task") == f"conversation_summary:{conversation_id}":
         logger.info(
             "Interactive chat waiting for active summary: conversation_id=%s",
             conversation_id,
