@@ -845,6 +845,7 @@ export default function Home() {
   const imageInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const sendingRef = useRef(false);
+  const activeRequestControllerRef = useRef<AbortController | null>(null);
 
   // ป้องกันคำขอโหลดประวัติแชตเก่าเขียนทับข้อความใหม่
   const conversationLoadTokenRef = useRef(0);
@@ -1334,6 +1335,10 @@ export default function Home() {
   // Send Message
   // ========================================
 
+  function handleStop() {
+    activeRequestControllerRef.current?.abort();
+  }
+
   async function handleSend(override?: string) {
   const fromButton = override !== undefined;
   const typedText = (fromButton ? override : input).trim();
@@ -1477,7 +1482,11 @@ export default function Home() {
     // แสดงข้อความผู้ใช้และช่องรอคำตอบ
     setMessages((prev) => [
       ...prev,
-      { role: "user", content },
+      {
+        role: "user",
+        content,
+        ...(messageImages.length ? { images: messageImages } : {}),
+      },
       { role: "assistant", content: "" },
     ]);
 
@@ -1515,9 +1524,13 @@ export default function Home() {
     // Request Backend
     // ========================================
 
+    const controller = new AbortController();
+    activeRequestControllerRef.current = controller;
+
     try {
       const res = await fetch(`${API}/chat/stream`, {
         method: "POST",
+        signal: controller.signal,
         headers: {
           "Content-Type": "application/json",
         },
@@ -1626,6 +1639,15 @@ export default function Home() {
         );
       }
     } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        updateAssistantMessage(
+          receivedText.trim()
+            ? `${receivedText}\n\n(หยุดการตอบแล้ว)`
+            : "ยกเลิกการตอบแล้ว"
+        );
+        return;
+      }
+
       console.error(
         "[ThaiMate] Chat request failed:",
         error
@@ -1664,6 +1686,9 @@ export default function Home() {
         return copy;
       });
     } finally {
+      if (activeRequestControllerRef.current === controller) {
+        activeRequestControllerRef.current = null;
+      }
       sendingRef.current = false;
       setLoading(false);
 
@@ -2156,15 +2181,28 @@ export default function Home() {
                 className="message-input min-w-0 flex-1 bg-transparent px-3 py-2.5 text-sm outline-none disabled:opacity-50"
               />
 
-              <button
-                onClick={() => handleSend()}
-                disabled={loading || (!input.trim() && selectedImages.length === 0)}
-                aria-label="ส่งข้อความ"
-                className="send-button inline-flex shrink-0 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-35"
-              >
-                <span>ส่ง</span>
-                <span aria-hidden="true">↑</span>
-              </button>
+              {loading ? (
+                <button
+                  type="button"
+                  onClick={handleStop}
+                  aria-label="หยุดการตอบ"
+                  title="หยุดการตอบ"
+                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-xs font-semibold text-white hover:bg-red-500"
+                >
+                  <span aria-hidden="true">■</span>
+                  <span>หยุด</span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => handleSend()}
+                  disabled={!input.trim() && selectedImages.length === 0}
+                  aria-label="ส่งข้อความ"
+                  className="send-button inline-flex shrink-0 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-35"
+                >
+                  <span>ส่ง</span>
+                  <span aria-hidden="true">↑</span>
+                </button>
+              )}
             </div>
 
             <p className="mt-2.5 text-center text-[10px] text-slate-600">
