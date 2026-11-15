@@ -661,7 +661,7 @@ async def chat_stream(req: ChatRequest):
 
         try:
             # Interactive requests take priority over optional background summarization.
-            cancel_conversation_summary(conv_id)
+            await cancel_conversation_summary(conv_id)
 
             context_messages, conversation_summary = load_conversation_context(
                 conv_id,
