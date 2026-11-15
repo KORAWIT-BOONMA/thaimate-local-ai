@@ -8,6 +8,8 @@ ThaiMate คือ Local-first AI Personal Assistant ที่พัฒนาข
 
 - **AI Chat:** สนทนาภาษาไทยและภาษาอังกฤษผ่านโมเดล Qwen 3.5:4B บน Ollama พร้อมแสดงคำตอบแบบ Streaming
 - **Chat History:** บันทึกประวัติการสนทนาด้วย SQLite และสามารถกลับไปดูบทสนทนาเดิมได้
+- **Conversation Summary:** สรุปข้อความเก่าของแต่ละบทสนทนาแบบ incremental เก็บใน SQLite และส่งข้อความล่าสุดแบบเต็มเพื่อรักษาความต่อเนื่อง
+- **Resource Management:** จัดคิวคำขอ Qwen และ BGE-M3 ไม่ให้ประมวลผลพร้อมกัน พร้อมยกเลิกงานสรุปเบื้องหลังเมื่อผู้ใช้กลับมาคุยต่อ
 - **Document Management:** เพิ่มและจัดการเอกสารความรู้ รองรับ PDF, DOCX, TXT, CSV และ XLSX
 - **Local Knowledge Search:** ใช้ BGE-M3 สร้าง Embeddings และค้นหาข้อมูลจากเอกสารภายในเครื่องด้วย Semantic Search
 - **Document Analysis:** อ่านและสรุปเนื้อหาเอกสาร รวมถึงวิเคราะห์ตารางข้อมูลจากไฟล์ที่รองรับ
@@ -36,9 +38,10 @@ FastAPI Backend (Port 8000)
        |      - File Management
        |      - Code Storage
        |
-       +---- Ollama (Port 11434)
+       +---- Ollama Request Queue
        |      - Qwen 3.5:4B
        |      - BGE-M3
+       |      - Serialized Model Access
        |
        +---- Tavily Web Search
        |
