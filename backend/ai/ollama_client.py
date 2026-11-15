@@ -197,6 +197,7 @@ async def chat_completion(
     *,
     timeout: httpx.Timeout | None = None,
     num_predict: int | None = None,
+    resource_task_name: str = "qwen_chat_completion",
 ) -> str:
     """Run one serialized Ollama request with optional output overrides."""
 
@@ -210,7 +211,7 @@ async def chat_completion(
     )
 
     try:
-        async with ollama_request("qwen_chat_completion"):
+        async with ollama_request(resource_task_name):
             async with httpx.AsyncClient(
                 timeout=timeout or TIMEOUT
             ) as client:
