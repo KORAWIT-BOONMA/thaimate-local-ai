@@ -1,6 +1,8 @@
 
 import httpx
 
+from ai.resource_manager import ollama_request
+
 
 # ==========================================
 # BGE-M3 Configuration
@@ -62,39 +64,40 @@ async def embed_texts(
     }
 
     try:
-        async with httpx.AsyncClient(
-            timeout=EMBED_TIMEOUT
-        ) as client:
+        async with ollama_request("bge_m3_embeddings"):
+            async with httpx.AsyncClient(
+                timeout=EMBED_TIMEOUT
+            ) as client:
 
-            response = await client.post(
-                f"{OLLAMA_URL}/api/embed",
-                json=payload,
-            )
-
-            response.raise_for_status()
-
-            data = response.json()
-            embeddings = data.get("embeddings")
-
-            if not isinstance(embeddings, list):
-                raise EmbeddingError(
-                    "Ollama ไม่ส่งข้อมูล Embeddings กลับมา"
+                response = await client.post(
+                    f"{OLLAMA_URL}/api/embed",
+                    json=payload,
                 )
 
-            if len(embeddings) != len(cleaned_texts):
-                raise EmbeddingError(
-                    "จำนวน Embeddings ไม่ตรงกับจำนวนข้อความ"
-                )
+                response.raise_for_status()
 
-            if any(
-                not isinstance(vector, list) or not vector
-                for vector in embeddings
-            ):
-                raise EmbeddingError(
-                    "ข้อมูล Vector ไม่ถูกต้อง"
-                )
+                data = response.json()
+                embeddings = data.get("embeddings")
 
-            return embeddings
+                if not isinstance(embeddings, list):
+                    raise EmbeddingError(
+                        "Ollama ไม่ส่งข้อมูล Embeddings กลับมา"
+                    )
+
+                if len(embeddings) != len(cleaned_texts):
+                    raise EmbeddingError(
+                        "จำนวน Embeddings ไม่ตรงกับจำนวนข้อความ"
+                    )
+
+                if any(
+                    not isinstance(vector, list) or not vector
+                    for vector in embeddings
+                ):
+                    raise EmbeddingError(
+                        "ข้อมูล Vector ไม่ถูกต้อง"
+                    )
+
+                return embeddings
 
     except httpx.ConnectError as exc:
         raise EmbeddingError(
