@@ -32,6 +32,13 @@ def init_db():
                 images_json TEXT NOT NULL DEFAULT '[]',
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE TABLE IF NOT EXISTS conversation_summaries (
+                conversation_id INTEGER PRIMARY KEY
+                    REFERENCES conversations(id) ON DELETE CASCADE,
+                summary TEXT NOT NULL DEFAULT '',
+                summarized_through_message_id INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
             """
         )
 
@@ -136,3 +143,114 @@ def delete_all_conversations() -> int:
     with get_conn() as conn:
         cursor = conn.execute("DELETE FROM conversations")
         return cursor.rowcount
+
+
+
+def get_messages_with_ids(conversation_id):
+    """Return complete stored conversation messages with stable database IDs."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, role, content, images_json, created_at
+            FROM messages
+            WHERE conversation_id = ?
+            ORDER BY id
+            """,
+            (conversation_id,),
+        ).fetchall()
+
+    messages = []
+    for row in rows:
+        item = dict(row)
+        raw_images = item.pop("images_json", "[]")
+        try:
+            images = json.loads(raw_images or "[]")
+        except (TypeError, json.JSONDecodeError):
+            images = []
+        item["images"] = images if isinstance(images, list) else []
+        messages.append(item)
+    return messages
+
+
+def get_conversation_summary(conversation_id):
+    """Read the saved incremental summary state for one conversation."""
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT summary, summarized_through_message_id, updated_at
+            FROM conversation_summaries
+            WHERE conversation_id = ?
+            """,
+            (conversation_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def save_conversation_summary(
+    conversation_id,
+    summary,
+    summarized_through_message_id,
+):
+    """Atomically replace summary text and advance its message cursor."""
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO conversation_summaries (
+                conversation_id,
+                summary,
+                summarized_through_message_id,
+                updated_at
+            )
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(conversation_id) DO UPDATE SET
+                summary = excluded.summary,
+                summarized_through_message_id =
+                    MAX(
+                        conversation_summaries.summarized_through_message_id,
+                        excluded.summarized_through_message_id
+                    ),
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (
+                conversation_id,
+                str(summary or ""),
+                int(summarized_through_message_id),
+            ),
+        )
+
+
+def get_recent_images(conversation_id, limit=3):
+    """Return the newest image attachments from a conversation, newest first."""
+    max_images = max(0, min(int(limit), 3))
+    if max_images == 0:
+        return []
+
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT images_json
+            FROM messages
+            WHERE conversation_id = ?
+                AND images_json != '[]'
+            ORDER BY id DESC
+            """,
+            (conversation_id,),
+        ).fetchall()
+
+    images = []
+    for row in rows:
+        try:
+            stored = json.loads(row["images_json"] or "[]")
+        except (TypeError, json.JSONDecodeError):
+            continue
+
+        if not isinstance(stored, list):
+            continue
+
+        for image in stored:
+            if isinstance(image, dict) and isinstance(image.get("data"), str):
+                images.append(image)
+                if len(images) >= max_images:
+                    return images
+
+    return images
