@@ -28,6 +28,11 @@ from ai.gemini_client import (
 )
 
 from ai.embeddings import EmbeddingError
+from ai.conversation_memory import (
+    load_conversation_context,
+    schedule_conversation_summary,
+)
+from ai.resource_manager import get_resource_snapshot
 
 from ai.knowledge import (
     index_workspace_file,
@@ -207,6 +212,31 @@ def root():
         "model": MODEL_NAME,
         "cloud_model": GEMINI_MODEL,
         "gemini_configured": is_gemini_configured(),
+    }
+
+
+@app.get("/resources")
+def resources():
+    """Report ThaiMate's local model scheduling state and memory policy."""
+    return {
+        "ollama": get_resource_snapshot(),
+        "models": {
+            "chat": {
+                "name": MODEL_NAME,
+                "keep_alive": 0,
+                "policy": "unload after each request",
+            },
+            "embeddings": {
+                "name": "bge-m3",
+                "query_keep_alive": 0,
+                "document_index_keep_alive": "30s",
+            },
+        },
+        "hardware_metrics_available": False,
+        "note": (
+            "This endpoint reports ThaiMate's request queue and model policy. "
+            "It does not measure operating-system RAM or GPU VRAM."
+        ),
     }
 
 
@@ -600,10 +630,23 @@ async def chat_stream(req: ChatRequest):
         completed = False
 
         try:
+            context_messages, conversation_summary = load_conversation_context(
+                conv_id,
+                latest_query=req.messages[-1].content,
+            )
+
+            logger.info(
+                "Conversation context selected: id=%s | raw_messages=%s | has_summary=%s",
+                conv_id,
+                len(context_messages),
+                bool(conversation_summary),
+            )
+
             async for text in generate_stream(
-                messages,
+                context_messages,
                 knowledge_source=req.knowledge_source,
                 model_provider=req.model_provider,
+                conversation_summary=conversation_summary,
             ):
                 parts.append(text)
                 yield text
@@ -642,6 +685,7 @@ async def chat_stream(req: ChatRequest):
                     "Chat stream completed: conversation_id=%s",
                     conv_id,
                 )
+                await schedule_conversation_summary(conv_id)
             else:
                 logger.warning(
                     "Chat stream interrupted: conversation_id=%s",
