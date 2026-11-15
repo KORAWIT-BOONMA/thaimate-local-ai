@@ -3,6 +3,7 @@ import logging
 
 import db
 from ai.ollama_client import DOCUMENT_SUMMARY_TIMEOUT, chat_completion
+from ai.resource_manager import get_resource_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -255,15 +256,35 @@ async def update_conversation_summary(conversation_id: int) -> bool:
             return False
 
 
-def cancel_conversation_summary(conversation_id: int) -> None:
-    """Cancel background summary work when the user resumes this conversation."""
+async def cancel_conversation_summary(conversation_id: int) -> None:
+    """
+    Give interactive chat priority without discarding an almost-finished summary.
+
+    A queued summary is cancelled immediately. If Qwen has already started the
+    summary request, wait for that one bounded operation so the new chat can
+    load the freshly saved memory rather than a stale context.
+    """
     task = _SUMMARY_TASKS.get(conversation_id)
-    if task is not None and not task.done():
-        task.cancel()
+    if task is None or task.done():
+        return
+
+    snapshot = get_resource_snapshot()
+    if snapshot.get("active_task") == "conversation_summary":
         logger.info(
-            "Conversation Summary paused for interactive chat: conversation_id=%s",
+            "Interactive chat waiting for active summary: conversation_id=%s",
             conversation_id,
         )
+    else:
+        task.cancel()
+        logger.info(
+            "Queued Conversation Summary cancelled for interactive chat: conversation_id=%s",
+            conversation_id,
+        )
+
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
 
 
 async def schedule_conversation_summary(conversation_id: int) -> None:
