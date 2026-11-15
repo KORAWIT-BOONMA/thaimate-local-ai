@@ -4,6 +4,8 @@ from collections.abc import AsyncIterator
 
 import httpx
 
+from ai.resource_manager import ollama_request
+
 
 # ==========================================
 # Ollama Configuration
@@ -196,7 +198,7 @@ async def chat_completion(
     timeout: httpx.Timeout | None = None,
     num_predict: int | None = None,
 ) -> str:
-    """Run a non-streaming request with optional timeout and output overrides."""
+    """Run one serialized Ollama request with optional output overrides."""
 
     effective_num_predict = (
         NUM_PREDICT if num_predict is None else max(1, int(num_predict))
@@ -208,47 +210,48 @@ async def chat_completion(
     )
 
     try:
-        async with httpx.AsyncClient(
-            timeout=timeout or TIMEOUT
-        ) as client:
+        async with ollama_request("qwen_chat_completion"):
+            async with httpx.AsyncClient(
+                timeout=timeout or TIMEOUT
+            ) as client:
 
-            response = await client.post(
-                f"{OLLAMA_URL}/api/chat",
-                json=payload,
-            )
-
-            if not response.is_success:
-                raise OllamaResponseError(
-                    f"Ollama ตอบ error: {response.text}"
+                response = await client.post(
+                    f"{OLLAMA_URL}/api/chat",
+                    json=payload,
                 )
 
-            try:
-                data = response.json()
-            except ValueError as exc:
-                raise OllamaResponseError(
-                    "Ollama ส่งข้อมูล JSON ไม่ถูกต้อง"
-                ) from exc
+                if not response.is_success:
+                    raise OllamaResponseError(
+                        f"Ollama ตอบ error: {response.text}"
+                    )
 
-            message = data.get("message", {})
+                try:
+                    data = response.json()
+                except ValueError as exc:
+                    raise OllamaResponseError(
+                        "Ollama ส่งข้อมูล JSON ไม่ถูกต้อง"
+                    ) from exc
 
-            if not isinstance(message, dict):
-                raise OllamaResponseError(
-                    "รูปแบบคำตอบจาก Ollama ไม่ถูกต้อง"
+                message = data.get("message", {})
+
+                if not isinstance(message, dict):
+                    raise OllamaResponseError(
+                        "รูปแบบคำตอบจาก Ollama ไม่ถูกต้อง"
+                    )
+
+                content = message.get("content", "")
+
+                if not isinstance(content, str):
+                    raise OllamaResponseError(
+                        "เนื้อหาคำตอบจาก Ollama ไม่ถูกต้อง"
+                    )
+
+                log_token_statistics(
+                    data,
+                    max_output_tokens=effective_num_predict,
                 )
 
-            content = message.get("content", "")
-
-            if not isinstance(content, str):
-                raise OllamaResponseError(
-                    "เนื้อหาคำตอบจาก Ollama ไม่ถูกต้อง"
-                )
-
-            log_token_statistics(
-                data,
-                max_output_tokens=effective_num_predict,
-            )
-
-            return content
+                return content
 
     except httpx.TimeoutException as exc:
         logger.error(
@@ -263,13 +266,10 @@ async def chat_completion(
         raise handle_http_error(exc) from exc
 
 
-# ==========================================
-# Streaming Chat
-# ==========================================
-
 async def chat_stream(
     messages: list[dict],
 ) -> AsyncIterator[str]:
+    """Stream one serialized Ollama request."""
 
     payload = build_payload(
         messages,
@@ -279,62 +279,65 @@ async def chat_stream(
     final_statistics = None
 
     try:
-        async with httpx.AsyncClient(
-            timeout=TIMEOUT
-        ) as client:
+        async with ollama_request("qwen_chat_stream"):
+            async with httpx.AsyncClient(
+                timeout=TIMEOUT
+            ) as client:
 
-            async with client.stream(
-                "POST",
-                f"{OLLAMA_URL}/api/chat",
-                json=payload,
-            ) as response:
+                async with client.stream(
+                    "POST",
+                    f"{OLLAMA_URL}/api/chat",
+                    json=payload,
+                ) as response:
 
-                if not response.is_success:
-                    body = await response.aread()
+                    if not response.is_success:
+                        body = await response.aread()
 
-                    raise OllamaResponseError(
-                        "Ollama ตอบ error: "
-                        + body.decode(
-                            "utf-8",
-                            errors="replace",
-                        )
-                    )
-
-                async for line in response.aiter_lines():
-
-                    if not line:
-                        continue
-
-                    try:
-                        chunk = json.loads(line)
-
-                    except json.JSONDecodeError:
-                        continue
-
-                    if chunk.get("error"):
                         raise OllamaResponseError(
-                            f"Ollama error: {chunk['error']}"
+                            "Ollama ตอบ error: "
+                            + body.decode(
+                                "utf-8",
+                                errors="replace",
+                            )
                         )
 
-                    message = chunk.get("message", {})
+                    async for line in response.aiter_lines():
 
-                    if isinstance(message, dict):
-                        content = message.get("content", "")
+                        if not line:
+                            continue
 
-                        if content:
-                            yield content
+                        try:
+                            chunk = json.loads(line)
 
-                    if chunk.get("done", False):
-                        final_statistics = chunk
+                        except json.JSONDecodeError:
+                            continue
 
-                        log_token_statistics(chunk)
+                        if chunk.get("error"):
+                            raise OllamaResponseError(
+                                f"Ollama error: {chunk['error']}"
+                            )
 
-                        break
+                        message = chunk.get("message", {})
 
-                if final_statistics is None:
-                    logger.warning(
-                        "Ollama stream ended without done=true"
-                    )
+                        if isinstance(message, dict):
+                            content = message.get("content", "")
+
+                            if content:
+                                yield content
+
+                        if chunk.get("done", False):
+                            final_statistics = chunk
+
+                            log_token_statistics(chunk)
+
+                            break
+
+                    if final_statistics is None:
+                        logger.warning(
+                            "Ollama stream ended without done=true"
+                        )
 
     except httpx.HTTPError as exc:
         raise handle_http_error(exc) from exc
+
+
