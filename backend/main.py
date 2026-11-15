@@ -220,6 +220,14 @@ def resources():
     """Report ThaiMate's local model scheduling state and memory policy."""
     return {
         "ollama": get_resource_snapshot(),
+        "conversation_summary": {
+            "enabled": True,
+            "trigger_messages": 14,
+            "recent_raw_messages": 8,
+            "maximum_summary_characters": 2200,
+            "storage": "SQLite per conversation",
+            "generation": "background after a completed response",
+        },
         "models": {
             "chat": {
                 "name": MODEL_NAME,
@@ -264,6 +272,29 @@ def conversations():
 @app.get("/conversations/{conversation_id}/messages")
 def conversation_messages(conversation_id: int):
     return db.get_messages(conversation_id)
+
+
+@app.get("/conversations/{conversation_id}/summary")
+def conversation_summary(conversation_id: int):
+    """Expose saved memory state for local diagnostics and testing."""
+    if not db.conversation_exists(conversation_id):
+        raise HTTPException(status_code=404, detail="ไม่พบบทสนทนา")
+
+    state = db.get_conversation_summary(conversation_id)
+    if not state:
+        return {
+            "conversation_id": conversation_id,
+            "available": False,
+            "summary": "",
+            "summarized_through_message_id": 0,
+            "updated_at": None,
+        }
+
+    return {
+        "conversation_id": conversation_id,
+        "available": bool(state.get("summary")),
+        **state,
+    }
 
 
 @app.delete("/conversations/{conversation_id}")
@@ -599,11 +630,6 @@ async def chat_stream(req: ChatRequest):
                 status_code=503,
                 detail=str(exc),
             ) from exc
-
-    messages = [
-        message.model_dump()
-        for message in req.messages
-    ]
 
     conv_id = req.conversation_id
 
